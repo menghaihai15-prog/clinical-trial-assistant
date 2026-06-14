@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>临床试验小秘书</title>
+    <meta
+      name="description"
+      content="临床试验小秘书是面向临研人的项目待办管理助手，支持项目维度、待办维度、搜索、注释和本地导出。"
+    />
+    <meta name="theme-color" content="#1f4e79" />
+    <meta property="og:title" content="临床试验小秘书" />
+    <meta
+      property="og:description"
+      content="临研人最好用的待办事项助手，帮助项目任务更清晰地推进。"
+    />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="stylesheet" href="styles.css?v=20260614-login-corner" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div class="header-actions">
+          <button id="loginButton" class="login-button" type="button">登录</button>
+        </div>
+        <div class="title-block">
+          <p class="eyebrow">Clinical Trial Assistant</p>
+          <h1>临床试验小秘书</h1>
+          <p class="subtitle">临研人最好用的待办事项助手</p>
+        </div>
+        <div class="header-dashboard">
+          <section class="stats-panel" aria-label="全局统计">
+            <button
+              id="projectSummaryButton"
+              class="stat-item stat-link"
+              type="button"
+              aria-expanded="false"
+              aria-controls="projectSummaryPopover"
+            >
+              <span class="stat-number" id="projectCount">0</span>
+              <span class="stat-label">项目数</span>
+            </button>
+            <div class="stat-divider"></div>
+            <button id="completedStatButton" class="stat-item stat-link" type="button">
+              <span class="stat-number" id="completedCount">0</span>
+              <span class="stat-label">已完成</span>
+            </button>
+            <div class="stat-divider"></div>
+            <button id="incompleteStatButton" class="stat-item stat-link" type="button">
+              <span class="stat-number" id="incompleteCount">0</span>
+              <span class="stat-label">未完成</span>
+            </button>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <span class="stat-number" id="totalCount">0</span>
+              <span class="stat-label">总工作量</span>
+            </div>
+          </section>
+          <div id="projectSummaryPopover" class="project-summary-popover" hidden>
+            <h2>项目工作量</h2>
+            <div id="projectSummaryList" class="project-summary-list"></div>
+          </div>
+        </div>
+      </header>
+
+      <section class="compact-tools" aria-label="搜索和新增项目">
+        <div class="dimension-tabs" role="tablist" aria-label="视图维度">
+          <button
+            class="dimension-tab is-active"
+            type="button"
+            data-view="project"
+            role="tab"
+            aria-selected="true"
+          >
+            项目维度
+          </button>
+          <button
+            class="dimension-tab"
+            type="button"
+            data-view="task"
+            role="tab"
+            aria-selected="false"
+          >
+            待办数量维度
+          </button>
+        </div>
+
+        <button id="quickTaskButton" class="quick-task-button" type="button">
+          + 新待办
+        </button>
+
+        <div class="utility-tray" aria-label="工具区">
+          <div class="search-panel utility-search" aria-label="搜索任务和项目">
+            <button
+              id="searchToggle"
+              class="utility-button search-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="searchInput"
+              title="搜索"
+            >
+              <span aria-hidden="true">⌕</span>
+              <span>搜索</span>
+            </button>
+            <label class="sr-only" for="searchInput">搜索任务和项目</label>
+            <input
+              id="searchInput"
+              type="search"
+              autocomplete="off"
+              placeholder="搜索"
+            />
+            <div id="searchResults" class="search-results" hidden></div>
+          </div>
+
+          <form id="projectForm" class="add-form toolbar project-add-tool" aria-label="新增项目">
+            <button
+              id="projectFormToggle"
+              class="utility-button project-form-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="projectName"
+              title="新增项目"
+            >
+              <span aria-hidden="true">＋</span>
+              <span>项目</span>
+            </button>
+            <label class="sr-only" for="projectName">项目名称</label>
+            <input
+              id="projectName"
+              type="text"
+              autocomplete="off"
+              placeholder="新项目名称"
+            />
+            <button class="utility-submit" type="submit">确认</button>
+          </form>
+
+          <button
+            id="collapseAllButton"
+            class="utility-button"
+            type="button"
+            title="全部折叠"
+            aria-label="全部折叠"
+          >
+            <span aria-hidden="true">▤</span>
+            <span>折叠</span>
+          </button>
+          <button
+            id="exportButton"
+            class="utility-button"
+            type="button"
+            title="导出 Excel"
+            aria-label="导出 Excel"
+          >
+            <span aria-hidden="true">⇩</span>
+            <span>导出</span>
+          </button>
+        </div>
+      </section>
+
+      <section id="emptyState" class="empty-state">
+        <h2>还没有项目</h2>
+        <p>先添加一个项目，再把今天要推进的工作逐条放进去。</p>
+      </section>
+
+      <section id="projectsList" class="projects-list" aria-live="polite"></section>
+
+      <section id="taskDimensionView" class="task-dimension-view" hidden>
+        <div class="task-dimension-header">
+          <h2>待办事项</h2>
+          <div class="task-filter-tabs" aria-label="待办事项状态筛选">
+            <button class="task-filter is-active" type="button" data-filter="incomplete">
+              未完成 <span id="taskFilterIncompleteCount">0</span>
+            </button>
+            <button class="task-filter" type="button" data-filter="completed">
+              已完成 <span id="taskFilterCompletedCount">0</span>
+            </button>
+            <button class="task-filter" type="button" data-filter="all">
+              全部 <span id="taskFilterAllCount">0</span>
+            </button>
+          </div>
+        </div>
+        <ul id="taskDimensionList" class="task-list task-dimension-list"></ul>
+        <p id="taskDimensionEmpty" class="task-dimension-empty" hidden></p>
+      </section>
+    </main>
+
+    <template id="projectTemplate">
+      <article class="project-card">
+        <button
+          class="drag-project"
+          type="button"
+          draggable="true"
+          title="拖拽移动项目"
+          aria-label="拖拽移动项目"
+        >
+          ⇅
+        </button>
+        <header class="project-header">
+          <div class="project-heading">
+            <textarea class="project-title-input" rows="1" aria-label="编辑项目名称"></textarea>
+            <p class="project-count"></p>
+          </div>
+          <div class="project-actions">
+            <button class="toggle-project" type="button" aria-expanded="true">折叠</button>
+            <button class="show-completed" type="button">已完成</button>
+            <button class="delete-project" type="button">删除项目</button>
+          </div>
+        </header>
+        <ul class="pinned-task-list" aria-label="置顶任务"></ul>
+        <div class="project-body">
+          <form class="add-form task-form">
+            <button
+              class="task-form-toggle"
+              type="button"
+              aria-expanded="false"
+              title="添加任务"
+            >
+              <span aria-hidden="true">＋</span>
+              <span>任务</span>
+            </button>
+            <label class="sr-only">任务名称</label>
+            <input type="text" autocomplete="off" placeholder="添加这个项目下的新任务" />
+            <button class="task-submit" type="submit">确认</button>
+          </form>
+          <ul class="task-list"></ul>
+          <p class="project-empty">暂无任务</p>
+        </div>
+      </article>
+    </template>
+
+    <template id="taskTemplate">
+      <li class="task-item">
+        <label class="task-check">
+          <input type="checkbox" />
+          <span class="task-content">
+            <textarea class="task-title-input" rows="1" aria-label="编辑任务名称"></textarea>
+            <span class="task-meta"></span>
+          </span>
+        </label>
+        <span class="task-actions">
+          <button class="note-task" type="button">注释</button>
+          <button class="pin-task" type="button">置顶</button>
+          <button class="delete-task" type="button" aria-label="删除任务">删除</button>
+        </span>
+      </li>
+    </template>
+
+    <div id="noteModal" class="modal-backdrop" hidden>
+      <section class="note-modal" role="dialog" aria-modal="true" aria-labelledby="noteModalTitle">
+        <h2 id="noteModalTitle">任务注释</h2>
+        <p id="noteTaskTitle" class="note-task-title"></p>
+        <label class="note-label" for="noteInput">解决情况 / 备注</label>
+        <textarea
+          id="noteInput"
+          rows="8"
+          placeholder="记录这个任务目前解决到哪一步、卡点、下一步动作..."
+        ></textarea>
+        <button id="saveNoteButton" class="save-note-button" type="button">保存注释</button>
+        <button id="cancelNoteButton" class="secondary-modal-button" type="button">
+          取消
+        </button>
+      </section>
+    </div>
+
+    <div id="completedModal" class="modal-backdrop" hidden>
+      <section
+        class="note-modal completed-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="completedModalTitle"
+      >
+        <h2 id="completedModalTitle">已完成待办事项</h2>
+        <p id="completedProjectTitle" class="note-task-title"></p>
+        <div id="completedTaskList" class="completed-task-list"></div>
+        <button id="closeCompletedButton" class="save-note-button" type="button">关闭</button>
+      </section>
+    </div>
+
+    <div id="globalTaskModal" class="modal-backdrop" hidden>
+      <section
+        class="note-modal global-task-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="globalTaskModalTitle"
+      >
+        <h2 id="globalTaskModalTitle">全部待办事项</h2>
+        <p id="globalTaskModalSubtitle" class="note-task-title"></p>
+        <div id="globalTaskList" class="global-task-list"></div>
+        <button id="closeGlobalTaskButton" class="save-note-button" type="button">关闭</button>
+      </section>
+    </div>
+
+    <div id="quickTaskModal" class="modal-backdrop" hidden>
+      <section
+        class="note-modal quick-task-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="quickTaskModalTitle"
+      >
+        <h2 id="quickTaskModalTitle">快速添加待办</h2>
+        <p class="note-task-title">随时记录新事项，并归类到对应项目。</p>
+        <form id="quickTaskForm" class="quick-task-form">
+          <label class="note-label" for="quickTaskTitle">待办事项名称</label>
+          <textarea
+            id="quickTaskTitle"
+            rows="3"
+            placeholder="输入新的待办事项"
+          ></textarea>
+
+          <label class="note-label" for="quickTaskProject">归属项目</label>
+          <select id="quickTaskProject"></select>
+
+          <div id="quickNewProjectField" class="quick-new-project-field" hidden>
+            <label class="note-label" for="quickNewProjectName">新建项目名称</label>
+            <input
+              id="quickNewProjectName"
+              type="text"
+              autocomplete="off"
+              placeholder="输入新项目名称"
+            />
+          </div>
+
+          <p id="quickTaskError" class="quick-task-error" hidden></p>
+          <button class="save-note-button" type="submit">添加待办</button>
+        </form>
+        <button id="closeQuickTaskButton" class="secondary-modal-button" type="button">
+          取消
+        </button>
+      </section>
+    </div>
+
+    <div id="loginModal" class="modal-backdrop" hidden>
+      <section class="note-modal login-modal" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
+        <h2 id="loginModalTitle">登录账户</h2>
+        <p class="note-task-title">登录后会进入该账户的清单空间，方便后续接入云端同步。</p>
+        <form id="loginForm" class="login-form">
+          <label class="note-label" for="accountInput">邮箱或手机号</label>
+          <input
+            id="accountInput"
+            type="text"
+            autocomplete="username"
+            placeholder="例如 name@example.com 或 13800000000"
+          />
+          <label class="note-label" for="passwordInput">验证码或密码</label>
+          <input
+            id="passwordInput"
+            type="password"
+            autocomplete="current-password"
+            placeholder="输入验证码或密码"
+          />
+          <button class="save-note-button" type="submit">登录并同步</button>
+        </form>
+        <button id="closeLoginButton" class="secondary-modal-button" type="button">暂不登录</button>
+        <div class="auth-providers" aria-label="第三方登录">
+          <button class="provider-button" type="button" data-provider="微信">微信登录</button>
+          <button class="provider-button" type="button" data-provider="企业微信">企业微信</button>
+        </div>
+        <p class="login-tip">当前版本先在本机按账户隔离保存；接入云端服务后即可跨设备实时同步。</p>
+      </section>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
