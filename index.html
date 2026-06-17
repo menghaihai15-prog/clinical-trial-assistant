@@ -15,9 +15,9 @@
       content="临研人最好用的待办事项助手，帮助项目任务更清晰地推进。"
     />
     <meta property="og:type" content="website" />
-    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <link rel="manifest" href="/site.webmanifest" />
-    <link rel="stylesheet" href="styles.css?v=20260614-login-corner" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="site.webmanifest" />
+    <link rel="stylesheet" href="styles.css?v=20260617-recurrence" />
   </head>
   <body>
     <main class="app-shell">
@@ -135,6 +135,17 @@
             />
             <button class="utility-submit" type="submit">确认</button>
           </form>
+
+          <button
+            id="recurringTaskButton"
+            class="utility-button"
+            type="button"
+            title="新增循环事项"
+            aria-label="新增循环事项"
+          >
+            <span aria-hidden="true">↻</span>
+            <span>循环</span>
+          </button>
 
           <button
             id="collapseAllButton"
@@ -331,6 +342,87 @@
       </section>
     </div>
 
+    <div id="recurringTaskModal" class="modal-backdrop" hidden>
+      <section
+        class="note-modal quick-task-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="recurringTaskModalTitle"
+      >
+        <h2 id="recurringTaskModalTitle">新增循环事项</h2>
+        <p class="note-task-title">适合定期会议、周期汇总和固定跟进事项。</p>
+        <form id="recurringTaskForm" class="quick-task-form">
+          <label class="note-label" for="recurringTaskTitle">事项名称</label>
+          <textarea
+            id="recurringTaskTitle"
+            rows="3"
+            placeholder="例如：每两周项目例会"
+          ></textarea>
+
+          <label class="note-label" for="recurringTaskProject">归属项目</label>
+          <select id="recurringTaskProject"></select>
+
+          <div id="recurringNewProjectField" class="quick-new-project-field" hidden>
+            <label class="note-label" for="recurringNewProjectName">新建项目名称</label>
+            <input
+              id="recurringNewProjectName"
+              type="text"
+              autocomplete="off"
+              placeholder="输入新项目名称"
+            />
+          </div>
+
+          <label class="note-label" for="recurringStartDate">计划开始日期</label>
+          <input id="recurringStartDate" type="date" />
+
+          <div class="recurrence-grid">
+            <label>
+              <span class="note-label">每隔</span>
+              <input id="recurringInterval" type="number" min="1" step="1" value="1" />
+            </label>
+            <label>
+              <span class="note-label">循环单位</span>
+              <select id="recurringUnit">
+                <option value="day">天</option>
+                <option value="week">周</option>
+                <option value="month">月</option>
+              </select>
+            </label>
+          </div>
+
+          <fieldset id="recurringWeekdaysField" class="recurrence-fieldset" hidden>
+            <legend>选择星期</legend>
+            <label><input type="checkbox" name="recurringWeekday" value="1" /> 周一</label>
+            <label><input type="checkbox" name="recurringWeekday" value="2" /> 周二</label>
+            <label><input type="checkbox" name="recurringWeekday" value="3" /> 周三</label>
+            <label><input type="checkbox" name="recurringWeekday" value="4" /> 周四</label>
+            <label><input type="checkbox" name="recurringWeekday" value="5" /> 周五</label>
+            <label><input type="checkbox" name="recurringWeekday" value="6" /> 周六</label>
+            <label><input type="checkbox" name="recurringWeekday" value="0" /> 周日</label>
+          </fieldset>
+
+          <fieldset id="recurringMonthlyField" class="recurrence-fieldset" hidden>
+            <legend>月循环方式</legend>
+            <label>
+              <input type="radio" name="recurringMonthlyMode" value="dayOfMonth" checked />
+              每月同日
+            </label>
+            <label>
+              <input type="radio" name="recurringMonthlyMode" value="lastDay" />
+              每月最后一天
+            </label>
+          </fieldset>
+
+          <p id="recurringTaskPreview" class="recurrence-preview"></p>
+          <p id="recurringTaskError" class="quick-task-error" hidden></p>
+          <button class="save-note-button" type="submit">创建循环事项</button>
+        </form>
+        <button id="closeRecurringTaskButton" class="secondary-modal-button" type="button">
+          取消
+        </button>
+      </section>
+    </div>
+
     <div id="loginModal" class="modal-backdrop" hidden>
       <section class="note-modal login-modal" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
         <h2 id="loginModalTitle">登录账户</h2>
@@ -361,6 +453,6 @@
       </section>
     </div>
 
-    <script type="module" src="app.js"></script>
+    <script src="app.js" defer></script>
   </body>
 </html>

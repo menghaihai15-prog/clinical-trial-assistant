@@ -8,6 +8,7 @@ const exportButton = document.querySelector("#exportButton");
 const collapseAllButton = document.querySelector("#collapseAllButton");
 const loginButton = document.querySelector("#loginButton");
 const quickTaskButton = document.querySelector("#quickTaskButton");
+const recurringTaskButton = document.querySelector("#recurringTaskButton");
 const searchToggle = document.querySelector("#searchToggle");
 const searchInput = document.querySelector("#searchInput");
 const searchResults = document.querySelector("#searchResults");
@@ -52,6 +53,20 @@ const quickNewProjectField = document.querySelector("#quickNewProjectField");
 const quickNewProjectName = document.querySelector("#quickNewProjectName");
 const quickTaskError = document.querySelector("#quickTaskError");
 const closeQuickTaskButton = document.querySelector("#closeQuickTaskButton");
+const recurringTaskModal = document.querySelector("#recurringTaskModal");
+const recurringTaskForm = document.querySelector("#recurringTaskForm");
+const recurringTaskTitle = document.querySelector("#recurringTaskTitle");
+const recurringTaskProject = document.querySelector("#recurringTaskProject");
+const recurringNewProjectField = document.querySelector("#recurringNewProjectField");
+const recurringNewProjectName = document.querySelector("#recurringNewProjectName");
+const recurringStartDate = document.querySelector("#recurringStartDate");
+const recurringInterval = document.querySelector("#recurringInterval");
+const recurringUnit = document.querySelector("#recurringUnit");
+const recurringWeekdaysField = document.querySelector("#recurringWeekdaysField");
+const recurringMonthlyField = document.querySelector("#recurringMonthlyField");
+const recurringTaskPreview = document.querySelector("#recurringTaskPreview");
+const recurringTaskError = document.querySelector("#recurringTaskError");
+const closeRecurringTaskButton = document.querySelector("#closeRecurringTaskButton");
 const loginModal = document.querySelector("#loginModal");
 const loginForm = document.querySelector("#loginForm");
 const accountInput = document.querySelector("#accountInput");
@@ -67,6 +82,8 @@ let draggedProjectId = null;
 let activeView = "project";
 let activeTaskFilter = "incomplete";
 
+const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
 render();
 renderAuthState();
 
@@ -74,6 +91,7 @@ exportButton.addEventListener("click", exportToExcel);
 collapseAllButton.addEventListener("click", collapseAllProjects);
 loginButton.addEventListener("click", handleAuthButtonClick);
 quickTaskButton.addEventListener("click", openQuickTaskModal);
+recurringTaskButton.addEventListener("click", openRecurringTaskModal);
 searchToggle.addEventListener("click", () => {
   const isOpen = searchInput.parentElement.classList.toggle("is-open");
   searchToggle.setAttribute("aria-expanded", String(isOpen));
@@ -124,6 +142,20 @@ quickTaskForm.addEventListener("submit", (event) => {
   submitQuickTask();
 });
 closeQuickTaskButton.addEventListener("click", closeQuickTaskModal);
+recurringTaskProject.addEventListener("change", updateRecurringTaskProjectMode);
+recurringStartDate.addEventListener("change", () => {
+  setDefaultWeekdayFromDate();
+  renderRecurringTaskFields();
+});
+recurringInterval.addEventListener("input", renderRecurringTaskPreview);
+recurringUnit.addEventListener("change", renderRecurringTaskFields);
+recurringWeekdaysField.addEventListener("change", renderRecurringTaskPreview);
+recurringMonthlyField.addEventListener("change", renderRecurringTaskPreview);
+recurringTaskForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  submitRecurringTask();
+});
+closeRecurringTaskButton.addEventListener("click", closeRecurringTaskModal);
 document.querySelectorAll(".dimension-tab").forEach((button) => {
   button.addEventListener("click", () => {
     activeView = button.dataset.view;
@@ -553,15 +585,7 @@ function createTaskNode(projectId, task) {
   checkbox.checked = task.completed;
   taskTitleInput.value = task.title;
   autoResizeTextArea(taskTitleInput);
-  taskMeta.replaceChildren(
-    document.createTextNode(`添加时间：${formatDateTime(task.createdAt)}`)
-  );
-  if (task.note) {
-    const noteBadge = document.createElement("span");
-    noteBadge.className = "note-badge";
-    noteBadge.textContent = "有注释";
-    taskMeta.appendChild(noteBadge);
-  }
+  renderTaskMeta(taskMeta, task);
   noteButton.classList.toggle("has-note", Boolean(task.note));
   pinButton.textContent = task.pinned ? "取消置顶" : "置顶";
 
@@ -581,9 +605,13 @@ function createTaskNode(projectId, task) {
 
   checkbox.addEventListener("change", () => {
     updateTask(projectId, task.id, (currentTask) => {
+      const wasCompleted = currentTask.completed;
       currentTask.completed = checkbox.checked;
       if (currentTask.completed) {
         currentTask.pinned = false;
+        if (!wasCompleted && currentTask.recurrence) {
+          createNextRecurringTask(projectId, currentTask);
+        }
       }
     });
   });
@@ -610,6 +638,34 @@ function createTaskNode(projectId, task) {
   });
 
   return taskNode;
+}
+
+function renderTaskMeta(container, task) {
+  container.replaceChildren(
+    document.createTextNode(`添加时间：${formatDateTime(task.createdAt)}`)
+  );
+
+  if (task.scheduledDate) {
+    container.appendChild(createMetaBadge(`计划：${formatDateOnly(task.scheduledDate)}`));
+  }
+
+  if (task.recurrence) {
+    container.appendChild(createMetaBadge(`循环：${formatRecurrenceRule(task.recurrence)}`));
+  }
+
+  if (task.note) {
+    const noteBadge = document.createElement("span");
+    noteBadge.className = "note-badge";
+    noteBadge.textContent = "有注释";
+    container.appendChild(noteBadge);
+  }
+}
+
+function createMetaBadge(text) {
+  const badge = document.createElement("span");
+  badge.className = "task-meta-badge";
+  badge.textContent = text;
+  return badge;
 }
 
 function autoResizeTextArea(input) {
@@ -645,13 +701,15 @@ function moveProject(sourceId, targetId) {
   saveAndRender();
 }
 
-function addTaskToProject(project, title) {
+function addTaskToProject(project, title, options = {}) {
   project.tasks.push({
     id: createId(),
     title,
     completed: false,
     pinned: false,
     createdAt: new Date().toISOString(),
+    scheduledDate: options.scheduledDate || "",
+    recurrence: options.recurrence || null,
   });
 }
 
@@ -767,6 +825,226 @@ function hideQuickTaskError() {
   quickTaskError.hidden = true;
 }
 
+function openRecurringTaskModal() {
+  recurringTaskTitle.value = "";
+  recurringNewProjectName.value = "";
+  recurringStartDate.value = formatDateValue(new Date());
+  recurringInterval.value = "1";
+  recurringUnit.value = "week";
+  document.querySelector(
+    'input[name="recurringMonthlyMode"][value="dayOfMonth"]'
+  ).checked = true;
+  renderRecurringTaskProjectOptions();
+  updateRecurringTaskProjectMode();
+  setDefaultWeekdayFromDate();
+  hideRecurringTaskError();
+  renderRecurringTaskFields();
+  recurringTaskModal.hidden = false;
+  recurringTaskTitle.focus();
+}
+
+function closeRecurringTaskModal() {
+  recurringTaskModal.hidden = true;
+  hideRecurringTaskError();
+}
+
+function renderRecurringTaskProjectOptions() {
+  recurringTaskProject.replaceChildren();
+
+  projects.forEach((project, index) => {
+    const option = document.createElement("option");
+    option.value = project.id;
+    option.textContent = project.name;
+    option.selected = index === 0;
+    recurringTaskProject.appendChild(option);
+  });
+
+  const newProjectOption = document.createElement("option");
+  newProjectOption.value = "__new__";
+  newProjectOption.textContent = "新建项目";
+  newProjectOption.selected = projects.length === 0;
+  recurringTaskProject.appendChild(newProjectOption);
+}
+
+function updateRecurringTaskProjectMode() {
+  const isNewProject = recurringTaskProject.value === "__new__";
+  recurringNewProjectField.hidden = !isNewProject;
+
+  if (isNewProject && !recurringTaskModal.hidden) {
+    recurringNewProjectName.focus();
+  }
+}
+
+function renderRecurringTaskFields() {
+  recurringWeekdaysField.hidden = recurringUnit.value !== "week";
+  recurringMonthlyField.hidden = recurringUnit.value !== "month";
+  renderRecurringTaskPreview();
+}
+
+function setDefaultWeekdayFromDate() {
+  const date = parseDateValue(recurringStartDate.value) || new Date();
+  const weekday = date.getDay();
+
+  recurringWeekdaysField
+    .querySelectorAll('input[name="recurringWeekday"]')
+    .forEach((input) => {
+      input.checked = Number(input.value) === weekday;
+    });
+}
+
+function submitRecurringTask() {
+  const taskTitle = recurringTaskTitle.value.trim();
+  const selectedProjectId = recurringTaskProject.value;
+  const scheduledDate = recurringStartDate.value;
+
+  if (!taskTitle) {
+    showRecurringTaskError("请输入事项名称。");
+    recurringTaskTitle.focus();
+    return;
+  }
+
+  if (!parseDateValue(scheduledDate)) {
+    showRecurringTaskError("请选择有效的计划开始日期。");
+    recurringStartDate.focus();
+    return;
+  }
+
+  const recurrence = buildRecurrenceFromForm();
+
+  if (!recurrence) return;
+
+  if (selectedProjectId === "__new__") {
+    const projectName = recurringNewProjectName.value.trim();
+
+    if (!projectName) {
+      showRecurringTaskError("请输入新建项目名称。");
+      recurringNewProjectName.focus();
+      return;
+    }
+
+    const project = {
+      id: createId(),
+      name: projectName,
+      collapsed: false,
+      tasks: [],
+    };
+    addTaskToProject(project, taskTitle, { scheduledDate, recurrence });
+    projects.push(project);
+    closeRecurringTaskModal();
+    saveAndRender();
+    return;
+  }
+
+  const project = projects.find((item) => item.id === selectedProjectId);
+  if (!project) {
+    showRecurringTaskError("请选择归属项目，或新建一个项目。");
+    recurringTaskProject.focus();
+    return;
+  }
+
+  addTaskToProject(project, taskTitle, { scheduledDate, recurrence });
+  closeRecurringTaskModal();
+  saveAndRender();
+}
+
+function buildRecurrenceFromForm() {
+  const interval = Number.parseInt(recurringInterval.value, 10);
+  const unit = recurringUnit.value;
+  const anchorDate = recurringStartDate.value;
+
+  if (!Number.isInteger(interval) || interval < 1) {
+    showRecurringTaskError("循环间隔必须是大于 0 的整数。");
+    recurringInterval.focus();
+    return null;
+  }
+
+  const recurrence = {
+    seriesId: createId(),
+    interval,
+    unit,
+    anchorDate,
+  };
+
+  if (unit === "week") {
+    const weekdays = getSelectedRecurringWeekdays();
+
+    if (weekdays.length === 0) {
+      showRecurringTaskError("请选择至少一个星期。");
+      return null;
+    }
+
+    recurrence.weekdays = weekdays;
+  }
+
+  if (unit === "month") {
+    const monthlyMode = document.querySelector(
+      'input[name="recurringMonthlyMode"]:checked'
+    ).value;
+    const date = parseDateValue(anchorDate);
+
+    recurrence.monthlyMode = monthlyMode;
+    if (monthlyMode === "dayOfMonth") {
+      recurrence.dayOfMonth = date.getDate();
+    }
+  }
+
+  return recurrence;
+}
+
+function getSelectedRecurringWeekdays() {
+  return [...recurringWeekdaysField.querySelectorAll('input[name="recurringWeekday"]')]
+    .filter((input) => input.checked)
+    .map((input) => Number(input.value))
+    .sort((first, second) => first - second);
+}
+
+function renderRecurringTaskPreview() {
+  const recurrence = buildPreviewRecurrence();
+
+  if (!recurrence || !parseDateValue(recurringStartDate.value)) {
+    recurringTaskPreview.textContent = "";
+    return;
+  }
+
+  recurringTaskPreview.textContent = `规则预览：${formatRecurrenceRule(
+    recurrence
+  )}，本次计划 ${formatDateOnly(recurringStartDate.value)}`;
+}
+
+function buildPreviewRecurrence() {
+  const interval = Number.parseInt(recurringInterval.value, 10);
+  const unit = recurringUnit.value;
+  const anchorDate = recurringStartDate.value;
+  const date = parseDateValue(anchorDate);
+
+  if (!Number.isInteger(interval) || interval < 1 || !date) return null;
+
+  const recurrence = { interval, unit, anchorDate };
+
+  if (unit === "week") {
+    recurrence.weekdays = getSelectedRecurringWeekdays();
+  }
+
+  if (unit === "month") {
+    recurrence.monthlyMode = document.querySelector(
+      'input[name="recurringMonthlyMode"]:checked'
+    ).value;
+    recurrence.dayOfMonth = date.getDate();
+  }
+
+  return recurrence;
+}
+
+function showRecurringTaskError(message) {
+  recurringTaskError.textContent = message;
+  recurringTaskError.hidden = false;
+}
+
+function hideRecurringTaskError() {
+  recurringTaskError.textContent = "";
+  recurringTaskError.hidden = true;
+}
+
 function renderProjectSummary() {
   if (projects.length === 0) {
     const emptySummary = document.createElement("p");
@@ -810,8 +1088,30 @@ function updateTask(projectId, taskId, updater) {
 
   if (!task) return;
 
-  updater(task);
+  updater(task, project);
   saveAndRender();
+}
+
+function createNextRecurringTask(projectId, completedTask) {
+  const project = projects.find((item) => item.id === projectId);
+  const recurrence = normalizeRecurrence(completedTask.recurrence);
+  const nextDate = getNextScheduledDate(completedTask.scheduledDate, recurrence);
+
+  if (!project || !recurrence || !nextDate) return;
+
+  project.tasks.push({
+    id: createId(),
+    title: completedTask.title,
+    completed: false,
+    pinned: false,
+    note: "",
+    createdAt: new Date().toISOString(),
+    scheduledDate: nextDate,
+    recurrence: {
+      ...recurrence,
+      seriesId: recurrence.seriesId || createId(),
+    },
+  });
 }
 
 function openNoteModal(projectId, taskId) {
@@ -874,9 +1174,7 @@ function openCompletedModal(projectId) {
       </label>
     `;
     item.querySelector(".completed-task-title").textContent = task.title;
-    item.querySelector(".completed-task-meta").textContent = `添加时间：${formatDateTime(
-      task.createdAt
-    )}`;
+    item.querySelector(".completed-task-meta").textContent = getCompletedTaskMeta(task);
     item.querySelector(".completed-task-note").textContent = task.note
       ? `注释：${task.note}`
       : "注释：暂无";
@@ -980,9 +1278,7 @@ function createCompletedTaskNode(projectId, task) {
     </label>
   `;
   item.querySelector(".completed-task-title").textContent = task.title;
-  item.querySelector(".completed-task-meta").textContent = `添加时间：${formatDateTime(
-    task.createdAt
-  )}`;
+  item.querySelector(".completed-task-meta").textContent = getCompletedTaskMeta(task);
   item.querySelector(".completed-task-note").textContent = task.note
     ? `注释：${task.note}`
     : "注释：暂无";
@@ -991,6 +1287,20 @@ function createCompletedTaskNode(projectId, task) {
   });
 
   return item;
+}
+
+function getCompletedTaskMeta(task) {
+  const parts = [`添加时间：${formatDateTime(task.createdAt)}`];
+
+  if (task.scheduledDate) {
+    parts.push(`计划：${formatDateOnly(task.scheduledDate)}`);
+  }
+
+  if (task.recurrence) {
+    parts.push(`循环：${formatRecurrenceRule(task.recurrence)}`);
+  }
+
+  return parts.join(" · ");
 }
 
 function restoreTaskToIncomplete(projectId, taskId) {
@@ -1053,7 +1363,13 @@ function getSearchMatches(query) {
         : [];
       const taskMatches = project.tasks
         .filter((task) =>
-          [project.name, task.title, task.note || ""]
+          [
+            project.name,
+            task.title,
+            task.note || "",
+            task.scheduledDate ? formatDateOnly(task.scheduledDate) : "",
+            task.recurrence ? formatRecurrenceRule(task.recurrence) : "",
+          ]
             .join(" ")
             .toLowerCase()
             .includes(query)
@@ -1066,6 +1382,8 @@ function getSearchMatches(query) {
           title: task.title,
           meta: `${project.name} · ${task.completed ? "已完成" : "未完成"}${
             task.note ? " · 有注释" : ""
+          }${task.recurrence ? ` · 循环：${formatRecurrenceRule(task.recurrence)}` : ""}${
+            task.scheduledDate ? ` · 计划：${formatDateOnly(task.scheduledDate)}` : ""
           }`,
         }));
 
@@ -1164,8 +1482,176 @@ function normalizeProjects(projectItems) {
       pinned: Boolean(task.pinned),
       note: task.note || "",
       createdAt: task.createdAt || new Date().toISOString(),
+      scheduledDate: task.scheduledDate || "",
+      recurrence: normalizeRecurrence(task.recurrence),
     })),
   }));
+}
+
+function normalizeRecurrence(recurrence) {
+  if (!recurrence || typeof recurrence !== "object") return null;
+
+  const interval = Number.parseInt(recurrence.interval, 10);
+  const unit = ["day", "week", "month"].includes(recurrence.unit)
+    ? recurrence.unit
+    : null;
+
+  if (!Number.isInteger(interval) || interval < 1 || !unit) return null;
+
+  const normalized = {
+    seriesId: recurrence.seriesId || createId(),
+    interval,
+    unit,
+    anchorDate: recurrence.anchorDate || "",
+  };
+
+  if (unit === "week") {
+    const weekdays = Array.isArray(recurrence.weekdays)
+      ? recurrence.weekdays
+          .map((value) => Number(value))
+          .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)
+          .sort((first, second) => first - second)
+      : [];
+    normalized.weekdays = weekdays.length > 0 ? [...new Set(weekdays)] : [0];
+  }
+
+  if (unit === "month") {
+    normalized.monthlyMode =
+      recurrence.monthlyMode === "lastDay" ? "lastDay" : "dayOfMonth";
+    if (normalized.monthlyMode === "dayOfMonth") {
+      const dayOfMonth = Number.parseInt(recurrence.dayOfMonth, 10);
+      normalized.dayOfMonth =
+        Number.isInteger(dayOfMonth) && dayOfMonth >= 1 && dayOfMonth <= 31
+          ? dayOfMonth
+          : 1;
+    }
+  }
+
+  return normalized;
+}
+
+function getNextScheduledDate(scheduledDate, recurrence) {
+  const date = parseDateValue(scheduledDate);
+  if (!date || !recurrence) return "";
+
+  if (recurrence.unit === "day") {
+    return formatDateValue(addDays(date, recurrence.interval));
+  }
+
+  if (recurrence.unit === "week") {
+    return getNextWeeklyDate(date, recurrence);
+  }
+
+  if (recurrence.unit === "month") {
+    return getNextMonthlyDate(date, recurrence);
+  }
+
+  return "";
+}
+
+function getNextWeeklyDate(date, recurrence) {
+  const weekdays = [...(recurrence.weekdays || [date.getDay()])].sort(
+    (first, second) => first - second
+  );
+  const currentWeekday = date.getDay();
+
+  if (weekdays.length === 1) {
+    return formatDateValue(addDays(date, recurrence.interval * 7));
+  }
+
+  const nextSameCycleWeekday = weekdays.find((weekday) => weekday > currentWeekday);
+  if (nextSameCycleWeekday !== undefined) {
+    return formatDateValue(addDays(date, nextSameCycleWeekday - currentWeekday));
+  }
+
+  const startOfCurrentWeek = addDays(date, -currentWeekday);
+  return formatDateValue(addDays(startOfCurrentWeek, recurrence.interval * 7 + weekdays[0]));
+}
+
+function getNextMonthlyDate(date, recurrence) {
+  const targetMonth = date.getMonth() + recurrence.interval;
+  const targetYear = date.getFullYear() + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const lastDay = getLastDayOfMonth(targetYear, normalizedMonth);
+
+  if (recurrence.monthlyMode === "lastDay") {
+    return formatDateValue(new Date(targetYear, normalizedMonth, lastDay));
+  }
+
+  const day = Math.min(recurrence.dayOfMonth || date.getDate(), lastDay);
+  return formatDateValue(new Date(targetYear, normalizedMonth, day));
+}
+
+function addDays(date, days) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function getLastDayOfMonth(year, monthIndex) {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function parseDateValue(value) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function formatDateValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateOnly(value) {
+  const date = parseDateValue(value);
+  if (!date) return "未知";
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function formatRecurrenceRule(recurrence) {
+  if (!recurrence) return "";
+
+  const intervalText = recurrence.interval === 1 ? "每" : `每${recurrence.interval}`;
+
+  if (recurrence.unit === "day") {
+    return `${intervalText}天`;
+  }
+
+  if (recurrence.unit === "week") {
+    const weekdayText = (recurrence.weekdays || [])
+      .map((weekday) => WEEKDAY_LABELS[weekday])
+      .filter(Boolean)
+      .join("、");
+    return `${intervalText}周${weekdayText ? ` ${weekdayText}` : ""}`;
+  }
+
+  if (recurrence.unit === "month") {
+    if (recurrence.monthlyMode === "lastDay") {
+      return `${intervalText}月 最后一天`;
+    }
+
+    return `${intervalText}月 ${recurrence.dayOfMonth || 1}日`;
+  }
+
+  return "";
 }
 
 function formatDateTime(value) {
@@ -1182,10 +1668,20 @@ function formatDateTime(value) {
 
 function exportToExcel() {
   const rows = [
-    ["项目名称", "任务名称", "状态", "是否置顶", "添加时间", "注释"],
+    [
+      "项目名称",
+      "任务名称",
+      "状态",
+      "是否置顶",
+      "添加时间",
+      "计划日期",
+      "是否循环",
+      "循环规则",
+      "注释",
+    ],
     ...projects.flatMap((project) => {
       if (project.tasks.length === 0) {
-        return [[project.name, "", "暂无任务", "", "", ""]];
+        return [[project.name, "", "暂无任务", "", "", "", "", "", ""]];
       }
 
       return getSortedTasks(project.tasks).map((task) => [
@@ -1194,6 +1690,9 @@ function exportToExcel() {
         task.completed ? "已完成" : "未完成",
         task.pinned && !task.completed ? "是" : "否",
         formatDateTime(task.createdAt),
+        task.scheduledDate || "",
+        task.recurrence ? "是" : "否",
+        task.recurrence ? formatRecurrenceRule(task.recurrence) : "",
         task.note || "",
       ]);
     }),
